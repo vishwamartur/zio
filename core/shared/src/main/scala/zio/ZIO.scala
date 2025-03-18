@@ -560,7 +560,7 @@ sealed trait ZIO[-R, +E, +A]
    * an [[zio.Exit]] for the completion value of the fiber.
    */
   final def exit(implicit trace: Trace): URIO[R, Exit[E, A]] =
-    self.foldCause(Exit.failCause, Exit.succeed(_))
+    self.foldCause(Exit.failCause, ZIO.successFn)
 
   /**
    * Extracts this effect as an [[zio.Exit]] and then applies the provided
@@ -656,7 +656,10 @@ sealed trait ZIO[-R, +E, +A]
   final def flatMapError[R1 <: R, E2](
     f: E => URIO[R1, E2]
   )(implicit ev: CanFail[E], trace: Trace): ZIO[R1, E2, A] =
-    flipWith(_ flatMap f)
+    self.foldZIO(
+      success = ZIO.successFn,
+      failure = f(_).flip
+    )
 
   /**
    * Returns an effect that performs the outer effect first, followed by the
@@ -1284,7 +1287,8 @@ sealed trait ZIO[-R, +E, +A]
   final def provideSomeEnvironment[R0](
     f: ZEnvironment[R0] => ZEnvironment[R]
   )(implicit trace: Trace): ZIO[R0, E, A] =
-    ZIO.environmentWithZIO(r0 => self.provideEnvironment(f(r0)))
+    FiberRef.currentEnvironment
+      .locallyWith(f.asInstanceOf[ZEnvironment[Any] => ZEnvironment[Any]])(self.asInstanceOf[ZIO[Any, E, A]])
 
   /**
    * Splits the environment into two parts, providing one part using the
@@ -5599,14 +5603,14 @@ object ZIO extends ZIOCompanionPlatformSpecific with ZIOCompanionVersionSpecific
         self.raceFibersWith[R, Nothing, E, Unit, B1](ZIO.sleep(duration).interruptible)(
           (winner, loser) =>
             winner.await.flatMap { exit =>
-              winner.inheritAll *> loser.interruptAs(parentFiberId) *> exit.mapExit(f)
+              loser.interruptAs(parentFiberId) *> winner.inheritAll *> exit.mapExit(f)
             },
           (winner, loser) =>
             winner.await.flatMap {
               case e: Exit.Failure[Nothing] =>
-                loser.inheritAll *> loser.interruptAs(parentFiberId) *> e
+                loser.interruptAs(parentFiberId) *> loser.inheritAll *> e
               case _ =>
-                loser.inheritAll *> loser.interruptAs(parentFiberId).as(b())
+                loser.interruptAs(parentFiberId) *> loser.inheritAll.as(b())
             },
           null,
           FiberScope.global

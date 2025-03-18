@@ -372,16 +372,21 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
    */
   def broadcastedQueuesDynamic(
     maximumLag: => Int
-  )(implicit trace: Trace): ZIO[R with Scope, Nothing, ZIO[Scope, Nothing, Dequeue[Take[E, A]]]] =
-    toHub(maximumLag).map(_.subscribe)
+  )(implicit trace: Trace): ZIO[R with Scope, Nothing, ZIO[R with Scope, Nothing, Dequeue[Take[E, A]]]] =
+    for {
+      hub <- ZIO.acquireRelease(Hub.bounded[Take[E, A]](maximumLag))(_.shutdown)
+      subscriber = for {
+                     queue <- hub.subscribe
+                     _     <- ZIO.whenZIO(hub.isEmpty)(self.runIntoHubScoped(hub).forkScoped)
+                   } yield queue
+    } yield subscriber
 
   /**
    * Allows a faster producer to progress independently of a slower consumer by
    * buffering up to `capacity` elements in a queue.
    *
    * @note
-   *   This combinator destroys the chunking structure. It's recommended to use
-   *   rechunk afterwards.
+   *   This combinator destroys the chunking structure.
    * @note
    *   Prefer capacities that are powers of 2 for better performance.
    */
@@ -468,8 +473,7 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
    * buffering up to `capacity` elements in a dropping queue.
    *
    * @note
-   *   This combinator destroys the chunking structure. It's recommended to use
-   *   rechunk afterwards.
+   *   This combinator destroys the chunking structure.
    * @note
    *   Prefer capacities that are powers of 2 for better performance.
    */
@@ -484,8 +488,7 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
    * buffering up to `capacity` elements in a sliding queue.
    *
    * @note
-   *   This combinator destroys the chunking structure. It's recommended to use
-   *   rechunk afterwards.
+   *   This combinator destroys the chunking structure.
    * @note
    *   Prefer capacities that are powers of 2 for better performance.
    */
@@ -534,7 +537,7 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
     ): ZChannel[R1, Any, Any, Any, E1, Chunk[A1], Unit] = {
       lazy val process: ZChannel[Any, Any, Any, Any, E1, Chunk[A1], Unit] =
         ZChannel.fromZIO(queue.take).flatMap { case (take, promise) =>
-          ZChannel.fromZIO(promise.succeed(())) *>
+          ZChannel.fromZIO(promise.succeedUnit) *>
             take.fold(
               ZChannel.unit,
               error => ZChannel.refailCause(error),
@@ -549,7 +552,7 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
       for {
         queue <- scoped
         start <- Promise.make[Nothing, Unit]
-        _     <- start.succeed(())
+        _     <- start.succeedUnit
         ref   <- Ref.make(start)
         _     <- (channel >>> producer(queue, ref)).runScoped.forkScoped
       } yield consumer(queue)
@@ -788,6 +791,9 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
   /**
    * Taps the stream, printing the result of calling `.toString` on the emitted
    * values.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def debug(implicit trace: Trace): ZStream[R, E, A] =
     self
@@ -797,6 +803,9 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
   /**
    * Taps the stream, printing the result of calling `.toString` on the emitted
    * values. Prefixes the output with the given label.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def debug(label: String)(implicit trace: Trace): ZStream[R, E, A] =
     self
@@ -1459,6 +1468,10 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
   def flattenTake[E1 >: E, A1](implicit ev: A <:< Take[E1, A1], trace: Trace): ZStream[R, E1, A1] =
     self.asInstanceOf[ZStream[R, E, Take[E1, A1]]] >>> ZPipeline.flattenTake
 
+  /**
+   * @note
+   *   This combinator destroys the chunking structure.
+   */
   def flattenZIO[R1 <: R, E1 >: E, A1](implicit ev: A <:< ZIO[R1, E1, A1], trace: Trace): ZStream[R1, E1, A1] =
     mapZIO(ev)
 
@@ -1865,6 +1878,9 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
   /**
    * Effectfully maps each element to a chunk, and flattens the chunks into the
    * output of this stream.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def mapConcatChunkZIO[R1 <: R, E1 >: E, A2](f: A => ZIO[R1, E1, Chunk[A2]])(implicit
     trace: Trace
@@ -1874,6 +1890,9 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
   /**
    * Effectfully maps each element to an iterable, and flattens the iterables
    * into the output of this stream.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def mapConcatZIO[R1 <: R, E1 >: E, A2](f: A => ZIO[R1, E1, Iterable[A2]])(implicit
     trace: Trace
@@ -1900,6 +1919,9 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
 
   /**
    * Maps over elements of the stream with the specified effectful function.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def mapZIO[R1 <: R, E1 >: E, A1](f: A => ZIO[R1, E1, A1])(implicit trace: Trace): ZStream[R1, E1, A1] = {
 
@@ -1927,8 +1949,7 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
    * will be emitted in the original order.
    *
    * @note
-   *   This combinator destroys the chunking structure. It's recommended to use
-   *   rechunk afterwards.
+   *   This combinator destroys the chunking structure.
    */
   def mapZIOPar[R1 <: R, E1 >: E, A2](n: => Int)(f: A => ZIO[R1, E1, A2])(implicit
     trace: Trace
@@ -1941,8 +1962,7 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
    * will be emitted in the original order.
    *
    * @note
-   *   This combinator destroys the chunking structure. It's recommended to use
-   *   rechunk afterwards.
+   *   This combinator destroys the chunking structure.
    */
   def mapZIOPar[R1 <: R, E1 >: E, A2](n: => Int, bufferSize: Int = 16)(f: A => ZIO[R1, E1, A2])(implicit
     trace: Trace
@@ -1956,6 +1976,9 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
    * outputs of type `K`. Up to `buffer` elements may be buffered per partition.
    * Transformed elements may be reordered but the order within a partition is
    * maintained.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def mapZIOParByKey[R1 <: R, E1 >: E, A2, K](
     keyBy: A => K,
@@ -1967,6 +1990,9 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
    * Maps over elements of the stream with the specified effectful function,
    * executing up to `n` invocations of `f` concurrently. The element order is
    * not enforced by this combinator, and elements may be reordered.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def mapZIOParUnordered[R1 <: R, E1 >: E, A2](n: => Int)(f: A => ZIO[R1, E1, A2])(implicit
     trace: Trace
@@ -2676,6 +2702,9 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
 
   /**
    * Fails with given error 'e' if value is `Left`.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def rightOrFail[A1, A2, E1 >: E](
     e: => E1
@@ -2887,7 +2916,7 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
     ZIO.scoped[R](runIntoQueueScoped(queue))
 
   /**
-   * Like [[ZStream#runIntoQueue]], but provides the result as a scoped [[ZIO]
+   * Like [[ZStream#runIntoQueue]], but provides the result as a scoped [[ZIO]]
    * to allow for scope composition.
    */
   def runIntoQueueScoped(
@@ -3054,6 +3083,9 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
 
   /**
    * Extracts the optional value, or fails with the given error 'e'.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def someOrFail[A2, E1 >: E](e: => E1)(implicit ev: A <:< Option[A2], trace: Trace): ZStream[R, E1, A2] =
     self.mapZIO(ev(_).fold[IO[E1, A2]](ZIO.fail(e))(ZIO.succeed(_)))
@@ -3242,14 +3274,20 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
     self >>> ZPipeline.takeWhileZIO(f)
 
   /**
-   * Adds an effect to consumption of every element of the stream.
+   * Adds an effect to consume every element of the stream.
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def tap[R1 <: R, E1 >: E](f: A => ZIO[R1, E1, Any])(implicit trace: Trace): ZStream[R1, E1, A] =
     mapZIO(a => f(a).as(a))
 
   /**
    * Returns a stream that effectfully "peeks" at the failure and adds an effect
-   * to consumption of every element of the stream
+   * to consume every element of the stream
+   *
+   * @note
+   *   This combinator destroys the chunking structure.
    */
   def tapBoth[R1 <: R, E1 >: E](
     f: E => ZIO[R1, E1, Any],
@@ -3320,7 +3358,7 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
           .pipeTo(loop)
           .ensuring(queue.offer(Take.end).forkDaemon *> queue.awaitShutdown) *> ZChannel.unit
       )
-        .merge(ZStream.execute((promise.succeed(()) *> right.run(sink)).ensuring(queue.shutdown)), HaltStrategy.Both)
+        .merge(ZStream.execute((promise.succeedUnit *> right.run(sink)).ensuring(queue.shutdown)), HaltStrategy.Both)
     }
 
   /**
@@ -3489,8 +3527,8 @@ final class ZStream[-R, +E, +A] private (val channel: ZChannel[R, Any, Any, Any,
     channel.toPull.map { pull =>
       pull.foldZIO(
         success = {
-          case Left(done)  => Exit.failNone
           case Right(elem) => Exit.succeed(elem)
+          case _           => Exit.failNone
         },
         failure = error => Exit.fail(Some(error))
       )
@@ -5656,14 +5694,14 @@ object ZStream extends ZStreamPlatformSpecificConstructors {
       Promise.make[Nothing, Unit].flatMap { p =>
         ref.modify {
           case s @ Handoff.State.Full(_, notifyProducer) => (notifyProducer.await *> offer(a), s)
-          case Handoff.State.Empty(notifyConsumer)       => (notifyConsumer.succeed(()) *> p.await, Handoff.State.Full(a, p))
+          case Handoff.State.Empty(notifyConsumer)       => (notifyConsumer.succeedUnit *> p.await, Handoff.State.Full(a, p))
         }.flatten
       }
 
     def take(implicit trace: Trace): UIO[A] =
       Promise.make[Nothing, Unit].flatMap { p =>
         ref.modify {
-          case Handoff.State.Full(a, notifyProducer)   => (notifyProducer.succeed(()).as(a), Handoff.State.Empty(p))
+          case Handoff.State.Full(a, notifyProducer)   => (notifyProducer.succeedUnit.as(a), Handoff.State.Empty(p))
           case s @ Handoff.State.Empty(notifyConsumer) => (notifyConsumer.await *> take, s)
         }.flatten
       }
@@ -5671,7 +5709,7 @@ object ZStream extends ZStreamPlatformSpecificConstructors {
     def poll(implicit trace: Trace): UIO[Option[A]] =
       Promise.make[Nothing, Unit].flatMap { p =>
         ref.modify {
-          case Handoff.State.Full(a, notifyProducer) => (notifyProducer.succeed(()).as(Some(a)), Handoff.State.Empty(p))
+          case Handoff.State.Full(a, notifyProducer) => (notifyProducer.succeedUnit.as(Some(a)), Handoff.State.Empty(p))
           case s @ Handoff.State.Empty(_)            => (ZIO.succeed(None), s)
         }.flatten
       }

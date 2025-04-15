@@ -72,38 +72,42 @@ private[zio] class ChannelExecutor[Env, InErr, InElem, InDone, OutErr, OutElem, 
   private[this] final def clearInProgressFinalizer(): Unit =
     inProgressFinalizer = null
 
-  def close(ex: Exit[Any, Any])(implicit trace: Trace): ZIO[Env, Nothing, Any] = ZIO.uninterruptible {
-    val fs = Array.ofDim[URIO[Env, Any]](4)
+  def close(ex: Exit[Any, Any])(implicit trace: Trace): ZIO[Env, Nothing, Any] =
+    ZIO.uninterruptible {
+      // NOTE: Each finalizer might have altered the state of the vars, so we need to suspend them all
+      val fs0 = ZIO.suspendSucceed {
+        val close0 = closeLastSubstream
+        closeLastSubstream = null
+        if (close0 eq null) Exit.unit
+        else close0
+      }
 
-    // NOTE: Each finalizer might have altered the state of the vars, so we need to suspend them all
-    fs(0) = ZIO.suspendSucceed {
-      val close0 = closeLastSubstream
-      closeLastSubstream = null
-      if (close0 eq null) Exit.unit
-      else close0
+      val fs1 = ZIO.suspendSucceed {
+        val finalizer = inProgressFinalizer
+
+        if (finalizer eq null) Exit.unit
+        else finalizer.ensuring(ZIO.succeed(clearInProgressFinalizer()))
+      }
+
+      val fs2 = ZIO.suspendSucceed {
+        if (activeSubexecutor eq null) Exit.unit
+        else activeSubexecutor.close(ex)
+      }
+
+      val fs3 = ZIO.suspendSucceed {
+        val selfFinalizers = popAllFinalizers(ex)
+
+        if (selfFinalizers eq null) Exit.unit
+        else selfFinalizers.ensuring(ZIO.succeed(clearInProgressFinalizer()))
+      }
+
+      for {
+        e0 <- fs0.exit
+        e1 <- fs1.exit
+        e2 <- fs2.exit
+        e3 <- fs3.exit
+      } yield Exit.collectAllDiscard(Chunk(e0, e1, e2, e3))
     }
-
-    fs(1) = ZIO.suspendSucceed {
-      val finalizer = inProgressFinalizer
-
-      if (finalizer eq null) Exit.unit
-      else finalizer.ensuring(ZIO.succeed(clearInProgressFinalizer()))
-    }
-
-    fs(2) = ZIO.suspendSucceed {
-      if (activeSubexecutor eq null) Exit.unit
-      else activeSubexecutor.close(ex)
-    }
-
-    fs(3) = ZIO.suspendSucceed {
-      val selfFinalizers = popAllFinalizers(ex)
-
-      if (selfFinalizers eq null) Exit.unit
-      else selfFinalizers.ensuring(ZIO.succeed(clearInProgressFinalizer()))
-    }
-
-    ZIO.foreach(fs)(_.exit).flatMap(Exit.collectAllDiscard(_))
-  }
 
   def getDone: Exit[OutErr, OutDone] = done.asInstanceOf[Exit[OutErr, OutDone]]
 

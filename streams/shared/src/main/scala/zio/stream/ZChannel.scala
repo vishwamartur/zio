@@ -1633,23 +1633,15 @@ object ZChannel {
     private[zio] final case class Finalizer[Env, OutErr, OutDone](finalizer: Exit[OutErr, OutDone] => URIO[Env, Any])
         extends Continuation[Env, Any, Any, Any, OutErr, Nothing, Nothing, OutDone, Nothing]
 
-    private[this] def SuccessIdentity(implicit
+    private[zio] def successIdentity[Z](z: Z)(implicit
       trace: Trace
-    ): Any => ZChannel[Any, Any, Any, Any, Nothing, Nothing, Any] =
-      ZChannel.succeedNow(_)
+    ): ZChannel[Any, Any, Any, Any, Nothing, Nothing, Z] =
+      ZChannel.succeedNow(z)
 
-    private[zio] def successIdentity[Z](implicit trace: Trace): Z => ZChannel[Any, Any, Any, Any, Nothing, Nothing, Z] =
-      SuccessIdentity.asInstanceOf[Z => ZChannel[Any, Any, Any, Any, Nothing, Nothing, Z]]
-
-    private[this] def FailCauseIdentity(implicit
+    private[zio] def failCauseIdentity[E](cause: Cause[E])(implicit
       trace: Trace
-    ): Cause[Any] => ZChannel[Any, Any, Any, Any, Any, Nothing, Nothing] =
-      ZChannel.refailCause
-
-    private[zio] def failCauseIdentity[E](implicit
-      trace: Trace
-    ): Cause[E] => ZChannel[Any, Any, Any, Any, E, Nothing, Nothing] =
-      FailCauseIdentity.asInstanceOf[Cause[E] => ZChannel[Any, Any, Any, Any, E, Nothing, Nothing]]
+    ): ZChannel[Any, Any, Any, Any, E, Nothing, Nothing] =
+      ZChannel.refailCause(cause)
   }
 
   private[zio] final case class Bridge[-Env, -InErr, -InElem, -InDone, +OutErr, +OutElem, +OutDone](

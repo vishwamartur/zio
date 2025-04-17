@@ -1639,7 +1639,7 @@ object ZChannel {
     ): Any => ZChannel[Any, Any, Any, Any, Nothing, Nothing, Any] =
       ZChannel.succeedNow(_)
 
-    private[zio] def successIdentity[Z](z: Z)(implicit
+    private[stream] def successIdentity[Z](z: Z)(implicit
       trace: Trace
     ): ZChannel[Any, Any, Any, Any, Nothing, Nothing, Z] =
       ZChannel.succeedNow(z)
@@ -1650,7 +1650,7 @@ object ZChannel {
     ): Cause[Any] => ZChannel[Any, Any, Any, Any, Any, Nothing, Nothing] =
       ZChannel.refailCause
 
-    private[zio] def failCauseIdentity[E](cause: Cause[E])(implicit
+    private[stream] def failCauseIdentity[E](cause: Cause[E])(implicit
       trace: Trace
     ): ZChannel[Any, Any, Any, Any, E, Nothing, Nothing] =
       ZChannel.refailCause(cause)

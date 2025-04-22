@@ -1577,11 +1577,22 @@ object ZChannel {
     right: () => ZChannel[Env, OutErr, OutElem, OutDone, OutErr2, OutElem2, OutDone2]
   ) extends ZChannel[Env, InErr, InElem, InDone, OutErr2, OutElem2, OutDone2]
 
-  private[zio] final case class Read[Env, InErr, InElem, InDone, OutErr, OutErr2, OutElem, OutElem2, OutDone, OutDone2](
+  private[zio] final case class Read[Env, InErr, InElem, InDone, OutErr, OutErr2, OutElem2, OutDone, OutDone2](
     more: InElem => ZChannel[Env, InErr, InElem, InDone, OutErr2, OutElem2, OutDone2],
-    onSuccess: OutDone => ZChannel[Env, InErr, InElem, InDone, OutErr2, OutElem, OutDone2],
-    onHalt: Cause[OutErr] => ZChannel[Env, InErr, InElem, InDone, OutErr2, OutElem, OutDone2]
-  ) extends ZChannel[Env, InErr, InElem, InDone, OutErr2, OutElem2, OutDone2]
+    onSuccess: OutDone => ZChannel[Env, InErr, InElem, InDone, OutErr2, OutErr2, OutDone2],
+    onHalt: Cause[OutErr] => ZChannel[Env, InErr, InElem, InDone, OutErr2, OutErr2, OutDone2]
+  ) extends ZChannel[Env, InErr, InElem, InDone, OutErr2, OutElem2, OutDone2] {
+    @deprecated("use the `onSuccess` and `onHalt` fields of the case class instead", "2.1.18")
+    def done = Fold.K(onSuccess = onSuccess, onHalt = onHalt)
+  }
+  private[zio] object Read {
+    @deprecated("use the case class constructor", "2.1.18")
+    def apply[Env, InErr, InElem, InDone, OutErr, OutErr2, OutElem2, OutDone, OutDone2](
+      more: InElem => ZChannel[Env, InErr, InElem, InDone, OutErr2, OutElem2, OutDone2],
+      done: Fold.K[Env, InErr, InElem, InDone, OutErr, OutErr2, OutElem2, OutDone, OutDone2]
+    ): Read[Env, InErr, InElem, InDone, OutErr, OutErr2, OutElem2, OutDone, OutDone2] =
+      Read(more = more, onSuccess = done.onSuccess, onHalt = done.onHalt)
+  }
   private[zio] final case class SucceedNow[OutDone](terminal: OutDone)
       extends ZChannel[Any, Any, Any, Any, Nothing, Nothing, OutDone]
   private[zio] final case class Fail[OutErr](error: () => Cause[OutErr])

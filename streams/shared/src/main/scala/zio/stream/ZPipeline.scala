@@ -1820,8 +1820,7 @@ object ZPipeline extends ZPipelinePlatformSpecificConstructors {
         chunk => {
           val size = chunk.size
 
-          if (size == 0) reader
-          else if (size == 1) {
+          if (size == 1) {
             val a = chunk.head
 
             f(a) match {
@@ -1829,13 +1828,15 @@ object ZPipeline extends ZPipelinePlatformSpecificConstructors {
               case l: Left[Err, ?]  => ZChannel.refailCause(Cause.fail(l.value))
             }
           } else {
-            val builder: ChunkBuilder[Out] = ChunkBuilder.make[Out](chunk.size)
-            val iterator: Iterator[In]     = chunk.iterator
+            val builder: ChunkBuilder[Out] = ChunkBuilder.make[Out](size)
+            val iterator                   = chunk.chunkIterator
+            var index: Int                 = 0
             var error: Err                 = null.asInstanceOf[Err]
 
-            while (iterator.hasNext && (error == null)) {
-              val a = iterator.next()
-              f(a) match {
+            while (iterator.hasNextAt(index) && (error == null)) {
+              val in = iterator.nextAt(index)
+              index += 1
+              f(in) match {
                 case r: Right[?, Out] => builder.addOne(r.value)
                 case l: Left[Err, ?]  => error = l.value
               }

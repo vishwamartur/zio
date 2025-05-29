@@ -51,7 +51,7 @@ package object zio
   }
 
   object Tag extends TagVersionSpecific {
-    def apply[A](implicit tag0: EnvironmentTag[A]): Tag[A] =
+    implicit def apply[A](implicit tag0: EnvironmentTag[A]): Tag[A] =
       new Tag[A] {
         def tag: zio.LightTypeTag           = tag0.tag
         override def closestClass: Class[_] = tag0.closestClass

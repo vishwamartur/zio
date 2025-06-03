@@ -85,7 +85,7 @@ private[stream] trait ZStreamPlatformSpecificConstructors {
                       }
     } yield {
       eitherStream match {
-        case Right(value) => ZStream.unwrap(output.shutdown as value)
+        case Right(value) => ZStream.unwrap(output.shutdown.as(value))
         case Left(canceler) =>
           lazy val loop: ZChannel[Any, Any, Any, Any, E, Chunk[A], Unit] =
             ZChannel.unwrap(

@@ -140,7 +140,7 @@ object ZPoolSpec extends ZIOBaseSpec {
             scope <- Scope.make
             pool  <- scope.extend(ZPool.make(get, 10))
             _     <- ZIO.scoped(pool.get).fork.repeatN(99)
-            _     <- scope.close(Exit.succeed(()))
+            _     <- scope.close(Exit.unit)
             _     <- count.get.repeatUntil(_ == 0)
           } yield assertCompletes
         } @@ exceptJS(nonFlaky) +

@@ -568,6 +568,7 @@ sealed trait ZIO[-R, +E, +A]
    * Extracts this effect as an [[zio.Exit]] and then applies the provided
    * function to produce a new effect
    */
+        
   final def exitWith[R1 <: R, E1, B](f: Exit[E, A] => ZIO[R1, E1, B])(implicit
     trace: Trace
   ): ZIO[R1, E1, B] =
@@ -576,6 +577,7 @@ sealed trait ZIO[-R, +E, +A]
   /**
    * Maps this effect to the default exit codes.
    */
+  @deprecated("This operator swallows errors and is no longer necessary to create a ZIO App.", "2.1.20")
   final def exitCode(implicit trace: Trace): URIO[R, ExitCode] =
     self.foldCause(
       _ => ExitCode.failure,

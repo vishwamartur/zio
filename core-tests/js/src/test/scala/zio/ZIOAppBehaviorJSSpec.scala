@@ -4,8 +4,8 @@ import zio.test._
 import zio.test.Assertion._
 
 /**
- * JavaScript-specific tests for ZIOApp behavior.
- * On JS platform, shutdown hooks and signal handlers work differently.
+ * JavaScript-specific tests for ZIOApp behavior. On JS platform, shutdown hooks
+ * and signal handlers work differently.
  */
 object ZIOAppBehaviorJSSpec extends ZIOSpecDefault {
 
@@ -106,13 +106,13 @@ object ZIOAppBehaviorJSSpec extends ZIOSpecDefault {
    */
   abstract class TestableZIOAppJS extends ZIOAppDefault {
     import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
-    
-    val finalizerRan = new AtomicBoolean(false)
-    val signalReceived = new AtomicBoolean(false)
+
+    val finalizerRan    = new AtomicBoolean(false)
+    val signalReceived  = new AtomicBoolean(false)
     val shutdownHookRan = new AtomicBoolean(false)
-    val exitCalled = new AtomicBoolean(false)
-    val completed = new AtomicBoolean(false)
-    val errorOutput = new AtomicReference[String]("")
+    val exitCalled      = new AtomicBoolean(false)
+    val completed       = new AtomicBoolean(false)
+    val errorOutput     = new AtomicReference[String]("")
 
     // Override to capture exit behavior without actually exiting
     override protected[zio] def exitUnsafe(code: ExitCode)(implicit unsafe: Unsafe): Unit = {
@@ -120,13 +120,13 @@ object ZIOAppBehaviorJSSpec extends ZIOSpecDefault {
       completed.set(true)
     }
 
-    def runTest(): UIO[TestResultJS] = {
+    def runTest(): UIO[TestResultJS] =
       for {
         exit <- invoke(Chunk.empty).exit
         exitCode = exit match {
-          case Exit.Success(_) => ExitCode.success
-          case Exit.Failure(_) => ExitCode.failure
-        }
+                     case Exit.Success(_) => ExitCode.success
+                     case Exit.Failure(_) => ExitCode.failure
+                   }
       } yield TestResultJS(
         exitCode = exitCode,
         completed = completed.get(),
@@ -136,18 +136,17 @@ object ZIOAppBehaviorJSSpec extends ZIOSpecDefault {
         exitCalled = exitCalled.get(),
         errorOutput = errorOutput.get()
       )
-    }
 
-    def runTestWithHashSignal(signal: String): UIO[TestResultJS] = {
+    def runTestWithHashSignal(signal: String): UIO[TestResultJS] =
       for {
         fiber <- invoke(Chunk.empty).fork
-        _ <- ZIO.sleep(100.millis) // Let app start
-        _ <- simulateHashSignal(signal)
-        exit <- fiber.await
+        _     <- ZIO.sleep(100.millis) // Let app start
+        _     <- simulateHashSignal(signal)
+        exit  <- fiber.await
         exitCode = exit match {
-          case Exit.Success(_) => ExitCode.success
-          case Exit.Failure(_) => ExitCode.failure
-        }
+                     case Exit.Success(_) => ExitCode.success
+                     case Exit.Failure(_) => ExitCode.failure
+                   }
       } yield TestResultJS(
         exitCode = exitCode,
         completed = completed.get(),
@@ -157,14 +156,12 @@ object ZIOAppBehaviorJSSpec extends ZIOSpecDefault {
         exitCalled = exitCalled.get(),
         errorOutput = errorOutput.get()
       )
-    }
 
-    private def simulateHashSignal(signal: String): UIO[Unit] = {
+    private def simulateHashSignal(signal: String): UIO[Unit] =
       ZIO.succeed {
         // Simulate hash change that would trigger signal handler
         signalReceived.set(true)
       }
-    }
   }
 
   object TestZIOAppJS {
@@ -177,12 +174,11 @@ object ZIOAppBehaviorJSSpec extends ZIOSpecDefault {
     }
 
     def withSignalHandler: TestableZIOAppJS = new TestableZIOAppJS {
-      override protected def installSignalHandlers(runtime: Runtime[Any])(implicit trace: Trace): UIO[Any] = {
+      override protected def installSignalHandlers(runtime: Runtime[Any])(implicit trace: Trace): UIO[Any] =
         ZIO.succeed {
           // Simulate signal handler installation
           signalReceived.set(true)
         }
-      }
 
       def run: ZIO[ZIOAppArgs with Scope, Any, Any] = ZIO.never
     }
@@ -192,25 +188,21 @@ object ZIOAppBehaviorJSSpec extends ZIOSpecDefault {
     }
 
     def withFinalizer: TestableZIOAppJS = new TestableZIOAppJS {
-      def run: ZIO[ZIOAppArgs with Scope, Any, Any] = 
+      def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         ZIO.acquireReleaseWith(
           ZIO.succeed("resource")
-        )(_ => 
-          finalizerRan.set(true) *> ZIO.succeed(())
-        )(_ => ZIO.succeed("Done"))
+        )(_ => finalizerRan.set(true) *> ZIO.succeed(()))(_ => ZIO.succeed("Done"))
     }
 
     def withFinalizerFailure: TestableZIOAppJS = new TestableZIOAppJS {
-      def run: ZIO[ZIOAppArgs with Scope, Any, Any] = 
+      def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         ZIO.acquireReleaseWith(
           ZIO.succeed("resource")
-        )(_ => 
-          finalizerRan.set(true) *> ZIO.succeed(())
-        )(_ => ZIO.fail("App failed"))
+        )(_ => finalizerRan.set(true) *> ZIO.succeed(()))(_ => ZIO.fail("App failed"))
     }
 
     def withShutdownHook: TestableZIOAppJS = new TestableZIOAppJS {
-      def run: ZIO[ZIOAppArgs with Scope, Any, Any] = {
+      def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         // Try to add shutdown hook (should be no-op on JS)
         ZIO.succeed {
           try {
@@ -221,11 +213,10 @@ object ZIOAppBehaviorJSSpec extends ZIOSpecDefault {
             case _: Throwable => // Expected on JS
           }
         } *> ZIO.succeed("Done")
-      }
     }
 
     def explicitExit: TestableZIOAppJS = new TestableZIOAppJS {
-      def run: ZIO[ZIOAppArgs with Scope, Any, Any] = 
+      def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         exit(ExitCode.success) *> ZIO.succeed("Should not reach here")
     }
   }

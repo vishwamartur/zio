@@ -4,8 +4,8 @@ import zio.test._
 import zio.test.Assertion._
 
 /**
- * Scala Native-specific tests for ZIOApp behavior.
- * On Native platform, shutdown hooks and signal handlers are no-ops.
+ * Scala Native-specific tests for ZIOApp behavior. On Native platform, shutdown
+ * hooks and signal handlers are no-ops.
  */
 object ZIOAppBehaviorNativeSpec extends ZIOSpecDefault {
 
@@ -111,14 +111,14 @@ object ZIOAppBehaviorNativeSpec extends ZIOSpecDefault {
    */
   abstract class TestableZIOAppNative extends ZIOAppDefault {
     import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
-    
-    val finalizerRan = new AtomicBoolean(false)
-    val allResourcesCleaned = new AtomicBoolean(false)
+
+    val finalizerRan           = new AtomicBoolean(false)
+    val allResourcesCleaned    = new AtomicBoolean(false)
     val signalHandlerInstalled = new AtomicBoolean(false)
-    val shutdownHookRan = new AtomicBoolean(false)
-    val exitCalled = new AtomicBoolean(false)
-    val completed = new AtomicBoolean(false)
-    val errorOutput = new AtomicReference[String]("")
+    val shutdownHookRan        = new AtomicBoolean(false)
+    val exitCalled             = new AtomicBoolean(false)
+    val completed              = new AtomicBoolean(false)
+    val errorOutput            = new AtomicReference[String]("")
 
     // Override to capture exit behavior without actually exiting
     override protected[zio] def exitUnsafe(code: ExitCode)(implicit unsafe: Unsafe): Unit = {
@@ -126,13 +126,13 @@ object ZIOAppBehaviorNativeSpec extends ZIOSpecDefault {
       completed.set(true)
     }
 
-    def runTest(): UIO[TestResultNative] = {
+    def runTest(): UIO[TestResultNative] =
       for {
         exit <- invoke(Chunk.empty).exit
         exitCode = exit match {
-          case Exit.Success(_) => ExitCode.success
-          case Exit.Failure(_) => ExitCode.failure
-        }
+                     case Exit.Success(_) => ExitCode.success
+                     case Exit.Failure(_) => ExitCode.failure
+                   }
       } yield TestResultNative(
         exitCode = exitCode,
         completed = completed.get(),
@@ -143,7 +143,6 @@ object ZIOAppBehaviorNativeSpec extends ZIOSpecDefault {
         exitCalled = exitCalled.get(),
         errorOutput = errorOutput.get()
       )
-    }
   }
 
   object TestZIOAppNative {
@@ -156,36 +155,31 @@ object ZIOAppBehaviorNativeSpec extends ZIOSpecDefault {
     }
 
     def withSignalHandler: TestableZIOAppNative = new TestableZIOAppNative {
-      override protected def installSignalHandlers(runtime: Runtime[Any])(implicit trace: Trace): UIO[Any] = {
+      override protected def installSignalHandlers(runtime: Runtime[Any])(implicit trace: Trace): UIO[Any] =
         // On Native, this should be a no-op, but we can track if it was called
         ZIO.succeed {
           signalHandlerInstalled.set(true)
         }
-      }
 
       def run: ZIO[ZIOAppArgs with Scope, Any, Any] = ZIO.succeed("Done")
     }
 
     def withFinalizer: TestableZIOAppNative = new TestableZIOAppNative {
-      def run: ZIO[ZIOAppArgs with Scope, Any, Any] = 
+      def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         ZIO.acquireReleaseWith(
           ZIO.succeed("resource")
-        )(_ => 
-          finalizerRan.set(true) *> ZIO.succeed(())
-        )(_ => ZIO.succeed("Done"))
+        )(_ => finalizerRan.set(true) *> ZIO.succeed(()))(_ => ZIO.succeed("Done"))
     }
 
     def withFinalizerFailure: TestableZIOAppNative = new TestableZIOAppNative {
-      def run: ZIO[ZIOAppArgs with Scope, Any, Any] = 
+      def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         ZIO.acquireReleaseWith(
           ZIO.succeed("resource")
-        )(_ => 
-          finalizerRan.set(true) *> ZIO.succeed(())
-        )(_ => ZIO.fail("App failed"))
+        )(_ => finalizerRan.set(true) *> ZIO.succeed(()))(_ => ZIO.fail("App failed"))
     }
 
     def withShutdownHook: TestableZIOAppNative = new TestableZIOAppNative {
-      def run: ZIO[ZIOAppArgs with Scope, Any, Any] = {
+      def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         // Try to add shutdown hook (should be no-op on Native)
         ZIO.succeed {
           try {
@@ -196,16 +190,15 @@ object ZIOAppBehaviorNativeSpec extends ZIOSpecDefault {
             case _: Throwable => // Expected on Native
           }
         } *> ZIO.succeed("Done")
-      }
     }
 
     def explicitExit: TestableZIOAppNative = new TestableZIOAppNative {
-      def run: ZIO[ZIOAppArgs with Scope, Any, Any] = 
+      def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         exit(ExitCode.success) *> ZIO.succeed("Should not reach here")
     }
 
     def multipleResources: TestableZIOAppNative = new TestableZIOAppNative {
-      def run: ZIO[ZIOAppArgs with Scope, Any, Any] = 
+      def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         for {
           _ <- ZIO.acquireReleaseWith(ZIO.succeed("r1"))(_ => finalizerRan.set(true))(_ => ZIO.unit)
           _ <- ZIO.acquireReleaseWith(ZIO.succeed("r2"))(_ => allResourcesCleaned.set(true))(_ => ZIO.unit)

@@ -5,12 +5,9 @@ import java.util.concurrent.atomic.{AtomicBoolean, AtomicReference}
 
 /**
  * Comprehensive test suite for ZIOApp behavior covering:
- * 1. App completion (success/failure)
- * 2. External signal interruption (SIGINT)
- * 3. Correct exit codes
- * 4. Finalizer execution
- * 5. Shutdown timeout behavior
- * 6. Related issues #9901, #9807, #9240
+ *   1. App completion (success/failure) 2. External signal interruption
+ *      (SIGINT) 3. Correct exit codes 4. Finalizer execution 5. Shutdown
+ *      timeout behavior 6. Related issues #9901, #9807, #9240
  */
 object ZIOAppBehaviorSpec extends ZIOSpecDefault {
 
@@ -108,54 +105,53 @@ object ZIOAppBehaviorSpec extends ZIOSpecDefault {
   )
 
   /**
-   * Base class for testable ZIOApp instances that can be controlled and monitored
+   * Base class for testable ZIOApp instances that can be controlled and
+   * monitored
    */
   abstract class TestableZIOApp extends ZIOAppDefault {
     // Shared state for tracking test execution
-    val finalizerRan = new AtomicBoolean(false)
+    val finalizerRan     = new AtomicBoolean(false)
     val allFinalizersRan = new AtomicBoolean(false)
-    val errorOutput = new AtomicReference[String]("")
+    val errorOutput      = new AtomicReference[String]("")
     val resourceAcquired = new AtomicBoolean(false)
 
     /**
      * Run this app in a test environment and return results
      */
-    def runTest(): UIO[TestResult] = {
+    def runTest(): UIO[TestResult] =
       for {
         exit <- invoke(Chunk.empty).exit
         exitCode = exit match {
-          case Exit.Success(_) => ExitCode.success
-          case Exit.Failure(_) => ExitCode.failure
-        }
+                     case Exit.Success(_) => ExitCode.success
+                     case Exit.Failure(_) => ExitCode.failure
+                   }
       } yield TestResult(
         exitCode = exitCode,
         finalizersRan = finalizerRan.get(),
         allFinalizersRan = allFinalizersRan.get(),
         errorOutput = errorOutput.get()
       )
-    }
 
     /**
      * Run this app with simulated interruption
      */
-    def runTestWithInterruption(): UIO[TestResult] = {
+    def runTestWithInterruption(): UIO[TestResult] =
       for {
         fiber <- invoke(Chunk.empty).fork
         // Wait until resource is acquired before interrupting
-        _ <- ZIO.whileLoop(!resourceAcquired.get())(ZIO.yieldNow)(_ => ZIO.unit)
-        _ <- fiber.interrupt
+        _    <- ZIO.whileLoop(!resourceAcquired.get())(ZIO.yieldNow)(_ => ZIO.unit)
+        _    <- fiber.interrupt
         exit <- fiber.await
         exitCode = exit match {
-          case Exit.Success(_) => ExitCode.success
-          case Exit.Failure(_) => ExitCode.failure
-        }
+                     case Exit.Success(_) => ExitCode.success
+                     case Exit.Failure(_) => ExitCode.failure
+                   }
       } yield TestResult(
         exitCode = exitCode,
         finalizersRan = finalizerRan.get(),
         allFinalizersRan = allFinalizersRan.get(),
         errorOutput = errorOutput.get()
       )
-    }
 
   }
 
@@ -180,9 +176,7 @@ object ZIOAppBehaviorSpec extends ZIOSpecDefault {
       def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         ZIO.acquireReleaseWith(
           ZIO.succeed("resource") <* ZIO.succeed(resourceAcquired.set(true))
-        )(_ =>
-          ZIO.succeed(finalizerRan.set(true))
-        )(_ =>
+        )(_ => ZIO.succeed(finalizerRan.set(true)))(_ =>
           // Wait indefinitely after signaling resource acquisition
           ZIO.never
         )
@@ -192,18 +186,14 @@ object ZIOAppBehaviorSpec extends ZIOSpecDefault {
       def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         ZIO.acquireReleaseWith(
           ZIO.succeed("resource")
-        )(_ =>
-          ZIO.succeed(finalizerRan.set(true))
-        )(_ => ZIO.succeed("Done"))
+        )(_ => ZIO.succeed(finalizerRan.set(true)))(_ => ZIO.succeed("Done"))
     }
 
     def withFinalizerFailure: TestableZIOApp = new TestableZIOApp {
       def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         ZIO.acquireReleaseWith(
           ZIO.succeed("resource")
-        )(_ =>
-          ZIO.succeed(finalizerRan.set(true))
-        )(_ => ZIO.fail("App failed"))
+        )(_ => ZIO.succeed(finalizerRan.set(true)))(_ => ZIO.fail("App failed"))
     }
 
     def multipleFinalizers: TestableZIOApp = new TestableZIOApp {
@@ -218,9 +208,7 @@ object ZIOAppBehaviorSpec extends ZIOSpecDefault {
       def run: ZIO[ZIOAppArgs with Scope, Any, Any] =
         ZIO.acquireReleaseWith(
           ZIO.succeed("Service") <* ZIO.succeed(resourceAcquired.set(true))
-        )(_ =>
-          ZIO.succeed(finalizerRan.set(true))
-        )(_ =>
+        )(_ => ZIO.succeed(finalizerRan.set(true)))(_ =>
           // Wait indefinitely after signaling resource acquisition
           ZIO.never
         )

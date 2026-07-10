@@ -20,7 +20,7 @@ private[zio] trait ZIOAppPlatformSpecific { self: ZIOApp =>
       (for {
         runtime <- ZIO.runtime[Environment with ZIOAppArgs]
         _       <- installSignalHandlers(runtime)
-        result <- runtime.run(ZIO.scoped[Environment with ZIOAppArgs](run)).tapErrorCause { c =>
+        result  <- runtime.run(ZIO.scoped[Environment with ZIOAppArgs](run)).tapErrorCause { c =>
                     // Don't log an interruption error if we're shutting down
                     if (shuttingDown.get() && c.isInterruptedOnly) Exit.unit
                     else ZIO.logErrorCause(c)
@@ -66,7 +66,7 @@ private[zio] trait ZIOAppPlatformSpecific { self: ZIOApp =>
         ZIO.uninterruptible {
           for {
             fiberId <- ZIO.fiberId
-            fiber <- workflow.interruptible.exitWith { exit0 =>
+            fiber   <- workflow.interruptible.exitWith { exit0 =>
                        val exitCode = if (exit0.isSuccess) ExitCode.success else ExitCode.failure
                        interruptRootFibers(fiberId).as(exitCode)
                      }.fork

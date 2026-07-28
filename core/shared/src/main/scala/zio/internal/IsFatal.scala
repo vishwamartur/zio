@@ -84,7 +84,7 @@ private[zio] object IsFatal {
       else {
         val oldIsFatal = toSet(oldValue)
         val newIsFatal = toSet(newValue)
-        val added = newIsFatal
+        val added      = newIsFatal
           .diff(oldIsFatal)
           .foldLeft(empty)((patch, isFatal) => patch.combine(Add(isFatal)))
         val removed = oldIsFatal
